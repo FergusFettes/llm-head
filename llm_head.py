@@ -123,7 +123,7 @@ def patched_log_to_db(self, db, parent_id=None):
 
 def patched_from_row(cls, db, row):
     # Call original implementation from global
-    response = original_from_row(cls, db, row)
+    response = original_from_row(db, row)
     response.parent_id = row.get("parent_id", None)
     return response
 
