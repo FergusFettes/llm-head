@@ -19,9 +19,8 @@ def mock_db():
     # Add test conversation
     db["conversations"].insert({
         "id": "test-conv-1",
-        "model": "gpt-3.5-turbo",
-        "system": "You are a helpful assistant",
-        "created_at": "2024-01-01T00:00:00"
+        "name": "Test Conversation",
+        "model": "gpt-3.5-turbo"
     })
     
     return db
@@ -35,4 +34,4 @@ def test_load_conversation_by_id(mock_db):
         assert conversation is not None
         assert conversation.id == "test-conv-1"
         assert conversation.model == "gpt-3.5-turbo"
-        assert conversation.system == "You are a helpful assistant"
+        assert conversation.name == "Test Conversation"
