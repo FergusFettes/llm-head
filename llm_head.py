@@ -139,6 +139,7 @@ def register_commands(cli):
     # Apply patches after command registration
     Response.log_to_db = new_log_to_db
     lcli.load_conversation = new_load_conversation
+
     @cli.group(
         cls=DefaultGroup,
         default="show",
