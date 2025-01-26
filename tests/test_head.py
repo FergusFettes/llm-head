@@ -3,7 +3,7 @@ import sqlite_utils
 from llm.plugins import pm
 from llm_head import new_load_conversation, m012_track_current_conversation
 from unittest.mock import patch
-import datetime
+from llm.migrations import migrate
 
 
 def test_plugin_is_installed():
@@ -13,29 +13,8 @@ def test_plugin_is_installed():
 
 @pytest.fixture
 def mock_db():
-    db = sqlite_utils.Database(memory=True)
-    # Create required tables
-    db["conversations"].create({
-        "id": str,
-        "model": str,
-        "system": str,
-        "created_at": str
-    }, pk="id")
-    
-    db["responses"].create({
-        "id": str,
-        "conversation_id": str,
-        "prompt": str,
-        "response": str,
-        "model": str,
-        "datetime_utc": str,
-        "parent_id": str
-    }, pk="id")
-    
-    db["state"].create({
-        "key": str,
-        "value": str
-    }, pk="key")
+    db = sqlite_utils.Database(':memory:')
+    migrate(db)
     
     # Add test conversation
     db["conversations"].insert({
