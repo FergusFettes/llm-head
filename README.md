@@ -1,7 +1,5 @@
-# llm-head
+# llm-head WIP DO NOT USE
 
-[![PyPI](https://img.shields.io/pypi/v/llm-head.svg)](https://pypi.org/project/llm-head/)
-[![Changelog](https://img.shields.io/github/v/release/fergusfettes/llm-head?include_prereleases&label=changelog)](https://github.com/fergusfettes/llm-head/releases)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/fergusfettes/llm-head/blob/main/LICENSE)
 
 Track and navigate LLM conversation history with branchable conversations.
