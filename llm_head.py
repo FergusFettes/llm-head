@@ -1,17 +1,17 @@
-import json
 import llm
 import llm.cli as lcli
-from llm.cli import logs_db_path, _conversation_name, load_conversation as original_load_conversation_import
-# Store originals in global scope
-original_log_to_db = None
-original_load_conversation = None
+from llm.cli import logs_db_path
 from llm.models import Response, Conversation
 from llm.migrations import migration, migrate
 import sqlite_utils
-from typing import Optional
+from typing import Optional, cast
 import click
 from click_default_group import DefaultGroup
-from ulid import ULID
+
+
+# Store originals in global scope
+original_log_to_db = None
+original_load_conversation = None
 
 
 @migration
@@ -66,46 +66,69 @@ def get_parent_id(response, db):
     return None
 
 
-def patched_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
-    # Call original implementation from global
-    conv = original_load_conversation(conversation_id)
-    if not conv:
-        return conv
-    
-    # Add our head tracking logic
+def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
+    print('adsfasdasdf')
     db = sqlite_utils.Database(logs_db_path())
-    head_id = get_head(db)
-    if head_id:
-        # Reorder responses based on head
-        response_dict = {r.id: r for r in conv.responses}
-        response_chain = []
-        current_id = head_id
-        while current_id in response_dict:
-            response_chain.append(response_dict[current_id])
-            current_id = get_parent_id(response_dict[current_id], db)
-        conv.responses = list(reversed(response_chain))
-    
-    return conv
+    migrate(db)
+    if conversation_id is None:
+        conversation_id = get_most_recent_active_conversation(db)
+        if conversation_id is None:
+            return None
+
+    try:
+        row = cast(sqlite_utils.db.Table, db["conversations"]).get(conversation_id)
+    except sqlite_utils.db.NotFoundError:
+        raise click.ClickException(
+            "No conversation found with id={}".format(conversation_id)
+        )
+
+    # Get all responses for lookup purposes
+    responses = {
+        r["id"]: r for r in db["responses"].rows_where(
+            "conversation_id = ?", [conversation_id]
+        )
+    }
+
+    if not responses:
+        return Conversation.from_row(row)
+
+    # Start from head or most recent
+    head = get_head(db) or max(responses.values(), key=lambda r: r["datetime_utc"])["id"]
+
+    # Build the response chain by following parents
+    response_chain = []
+    while head and head in responses:
+        current = Response.from_row(responses[head])
+        response_chain.append(current)
+        head = get_parent_id(current, db)
+
+    # Create conversation and add responses in chronological order
+    conversation = Conversation.from_row(row)
+    conversation.responses = list(reversed(response_chain))
+    return conversation
 
 
 def patched_log_to_db(self, db, parent_id=None):
     # Call original implementation from global
-    original_log_to_db(self, db, parent_id)
-    # Only add our head tracking code
-    db['state'].upsert({'key': 'head', 'value': self.id}, pk='key')
+    original_log_to_db(self, db)
+
+    # Get the most recent response
+    response = next(db.query('SELECT * FROM responses ORDER BY datetime_utc DESC LIMIT 1'))
+
+    # Add our head tracking code
+    db['state'].upsert({'key': 'head', 'value': response['id']}, pk='key')
 
 
 @llm.hookimpl
 def register_commands(cli):
-    global original_log_to_db, original_load_conversation
+    global original_log_to_db
     
-    # Store originals FIRST
+    # Store original
     original_log_to_db = Response.log_to_db
-    original_load_conversation = lcli.load_conversation
     
     # THEN apply patches
     Response.log_to_db = patched_log_to_db
-    lcli.load_conversation = patched_load_conversation
+    lcli.load_conversation = new_load_conversation
 
     @cli.group(
         cls=DefaultGroup,
@@ -196,3 +219,7 @@ def register_commands(cli):
             click.echo(response["response"])
         except sqlite_utils.db.NotFoundError:
             click.echo("No head currently set")
+
+    @head.command()
+    def test():
+        print('asdfasdfasdfasfadfsadsfadfsadfsdasfadfsdsaf')

@@ -1,6 +1,6 @@
 [project]
 name = "llm-head"
-version = "0.1"
+version = "0.1.0"
 description = "Allow forking and backtracking."
 readme = "README.md"
 authors = [{name = "Fergus Fettes"}]

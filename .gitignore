@@ -12,4 +12,4 @@ dist
 build
 .aider*
 .github/
-diff.txt
+.env
