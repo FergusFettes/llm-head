@@ -9,9 +9,9 @@ import click
 from click_default_group import DefaultGroup
 
 
-# Store originals in global scope
-original_log_to_db = None
-original_from_row = None
+# Store original
+original_log_to_db = Response.log_to_db
+original_from_row = Response.from_row
 
 
 @migration
@@ -107,18 +107,19 @@ def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversati
     return conversation
 
 
-def patched_log_to_db(self, db, parent_id=None):
+def patched_log_to_db(self, db):
     # Call original implementation from global
     original_log_to_db(self, db)
 
     # Get the most recent response
-    response = next(db.query('SELECT * FROM responses ORDER BY datetime_utc DESC LIMIT 1'))
+    response = Response.from_row(db, next(db.query('SELECT * FROM responses ORDER BY datetime_utc DESC LIMIT 1')))
+    parent_id = get_parent_id(response, db)
 
     # Set the parent ID
-    db['responses'].upsert({'key': response['id'], 'parent_id': parent_id}, pk='key')
+    db['responses'].upsert({'id': response.id, 'parent_id': parent_id}, pk='id')
 
-    # Add our head tracking code
-    db['state'].upsert({'key': 'head', 'value': response['id']}, pk='key')
+    # Add head tracking
+    db['state'].upsert({'key': 'head', 'value': response.id}, pk='key')
 
 
 def patched_from_row(cls, db, row):
@@ -128,11 +129,7 @@ def patched_from_row(cls, db, row):
     return response
 
 
-# Store original
-original_log_to_db = Response.log_to_db
-original_from_row = Response.from_row
-
-# THEN apply patches
+# Apply patches
 Response.log_to_db = patched_log_to_db
 Response.from_row = classmethod(patched_from_row)
 Response.parent_id = None
@@ -230,4 +227,3 @@ def register_commands(cli):
             click.echo(response["response"])
         except sqlite_utils.db.NotFoundError:
             click.echo("No head currently set")
-
