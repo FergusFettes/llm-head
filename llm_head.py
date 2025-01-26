@@ -67,7 +67,6 @@ def get_parent_id(response, db):
 
 
 def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
-    print('adsfasdasdf')
     db = sqlite_utils.Database(logs_db_path())
     migrate(db)
     if conversation_id is None:
@@ -220,6 +219,3 @@ def register_commands(cli):
         except sqlite_utils.db.NotFoundError:
             click.echo("No head currently set")
 
-    @head.command()
-    def test():
-        print('asdfasdfasdfasfadfsadsfadfsadfsdasfadfsdsaf')
