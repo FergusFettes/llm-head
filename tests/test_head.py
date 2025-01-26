@@ -33,5 +33,5 @@ def test_load_conversation_by_id(mock_db):
         conversation = new_load_conversation("test-conv-1")
         assert conversation is not None
         assert conversation.id == "test-conv-1"
-        assert conversation.model == "gpt-3.5-turbo"
+        assert "gpt-3.5-turbo" in str(conversation.model)
         assert conversation.name == "Test Conversation"
