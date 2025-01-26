@@ -61,11 +61,6 @@ def get_parent_id(response, db):
     return None
 
 
-# Store originals
-original_load_conversation = lcli.load_conversation
-original_log_to_db = Response.log_to_db
-
-
 def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
     db = sqlite_utils.Database(logs_db_path())
     migrate(db)
@@ -139,13 +134,11 @@ def new_log_to_db(self, db, parent_id=None):
     )
 
 
-# Apply patches
-Response.log_to_db = new_log_to_db
-lcli.load_conversation = new_load_conversation
-
-
 @llm.hookimpl
 def register_commands(cli):
+    # Apply patches after command registration
+    Response.log_to_db = new_log_to_db
+    lcli.load_conversation = new_load_conversation
     @cli.group(
         cls=DefaultGroup,
         default="show",
