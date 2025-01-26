@@ -1,12 +1,14 @@
+import json
 import llm
 import llm.cli as lcli
-from llm.cli import logs_db_path
+from llm.cli import logs_db_path, _conversation_name
 from llm.models import Response, Conversation
 from llm.migrations import migration, migrate
 import sqlite_utils
 from typing import Optional
 import click
 from click_default_group import DefaultGroup
+from ulid import ULID
 
 
 @migration
@@ -103,33 +105,64 @@ def new_log_to_db(self, db, parent_id=None):
     conversation = self.conversation
     if not conversation:
         conversation = Conversation(model=self.model)
-    
-    if not conversation.id:
-        conversation_data = {
-            "model": conversation.model,
-            "options": conversation.options,
-            "title": conversation.title,
-            "system": conversation.system,
-        }
-        db["conversations"].insert(conversation_data)
-
-    self._force()
+    db["conversations"].insert(
+        {
+            "id": conversation.id,
+            "name": _conversation_name(
+                self.prompt.prompt or self.prompt.system or ""
+            ),
+            "model": conversation.model.model_id,
+        },
+        ignore=True,
+    )
+    response_id = str(ULID()).lower()
     response = {
-        "prompt": self.prompt,
+        "id": response_id,
+        "model": self.model.model_id,
+        "prompt": self.prompt.prompt,
+        "system": self.prompt.system,
         "prompt_json": self._prompt_json,
-        "response": self.response,
-        "response_json": self.response_json,
-        "model": self.model,
-        "system": self.system,
+        "options_json": {
+            key: value
+            for key, value in dict(self.prompt.options).items()
+            if value is not None
+        },
+        "response": self.text_or_raise(),
+        "response_json": self.json(),
         "conversation_id": conversation.id,
         "duration_ms": self.duration_ms(),
         "datetime_utc": self.datetime_utc(),
+        "input_tokens": self.input_tokens,
+        "output_tokens": self.output_tokens,
+        "token_details": (
+            json.dumps(self.token_details) if self.token_details else None
+        ),
         "parent_id": parent_id,
     }
     db["responses"].insert(response)
+    # Persist any attachments - loop through with index
+    for index, attachment in enumerate(self.prompt.attachments):
+        attachment_id = attachment.id()
+        db["attachments"].insert(
+            {
+                "id": attachment_id,
+                "type": attachment.resolve_type(),
+                "path": attachment.path,
+                "url": attachment.url,
+                "content": attachment.content,
+            },
+            replace=True,
+        )
+        db["prompt_attachments"].insert(
+            {
+                "response_id": response_id,
+                "attachment_id": attachment_id,
+                "order": index,
+            },
+        )
     
     db['state'].upsert(
-        {'key': 'head', 'value': response['id']},
+        {'key': 'head', 'value': response_id},
         pk='key'
     )
 
