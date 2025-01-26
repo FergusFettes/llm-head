@@ -36,6 +36,7 @@ def test_load_conversation_by_id(mock_db):
         assert conversation.id == "test-conv-1"
         assert "gpt-3.5-turbo" in str(conversation.model)
         assert conversation.name == "Test Conversation"
+        assert isinstance(conversation.responses, list)
 
 
 def test_load_nonexistent_conversation(mock_db):
