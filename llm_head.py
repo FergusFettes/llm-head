@@ -1,7 +1,10 @@
 import json
 import llm
 import llm.cli as lcli
-from llm.cli import logs_db_path, _conversation_name, load_conversation as original_load_conversation
+from llm.cli import logs_db_path, _conversation_name, load_conversation as original_load_conversation_import
+# Store originals in global scope
+original_log_to_db = None
+original_load_conversation = None
 from llm.models import Response, Conversation
 from llm.migrations import migration, migrate
 import sqlite_utils
@@ -64,7 +67,7 @@ def get_parent_id(response, db):
 
 
 def patched_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
-    # Call original implementation
+    # Call original implementation from global
     conv = original_load_conversation(conversation_id)
     if not conv:
         return conv
@@ -86,18 +89,21 @@ def patched_load_conversation(conversation_id: Optional[str]) -> Optional[Conver
 
 
 def patched_log_to_db(self, db, parent_id=None):
-    # Store original method
-    original_log_to_db = Response.log_to_db
-    # Call original implementation
+    # Call original implementation from global
     original_log_to_db(self, db, parent_id)
     # Only add our head tracking code
-    response_id = next(db.query("SELECT id FROM responses ORDER BY datetime_utc DESC LIMIT 1"))["id"]
-    db['state'].upsert({'key': 'head', 'value': response_id}, pk='key')
+    db['state'].upsert({'key': 'head', 'value': self.id}, pk='key')
 
 
 @llm.hookimpl
 def register_commands(cli):
-    # Apply patches after command registration
+    global original_log_to_db, original_load_conversation
+    
+    # Store originals FIRST
+    original_log_to_db = Response.log_to_db
+    original_load_conversation = lcli.load_conversation
+    
+    # THEN apply patches
     Response.log_to_db = patched_log_to_db
     lcli.load_conversation = patched_load_conversation
 
