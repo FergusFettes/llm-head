@@ -74,7 +74,8 @@ def test_load_most_recent_conversation(mock_db):
             "conversation_id": "test-conv-1",
             "datetime_utc": "2024-01-01T10:00:00Z",
             "prompt": "old",
-            "response": "response"
+            "response": "response",
+            "options_json": "{}",
         })
         
         mock_db["responses"].insert({
@@ -82,7 +83,8 @@ def test_load_most_recent_conversation(mock_db):
             "conversation_id": "test-conv-2",
             "datetime_utc": "2024-01-02T10:00:00Z",
             "prompt": "new",
-            "response": "response"
+            "response": "response",
+            "options_json": "{}",
         })
 
         # Should load test-conv-2 as it's more recent
@@ -101,7 +103,8 @@ def test_response_chain_building(mock_db):
             "conversation_id": "test-conv-1",
             "datetime_utc": "2024-01-01T10:00:00Z",
             "prompt": "first",
-            "response": "response 1"
+            "response": "response 1",
+            "options_json": "{}",
         })
         
         mock_db["responses"].insert({
@@ -110,7 +113,8 @@ def test_response_chain_building(mock_db):
             "datetime_utc": "2024-01-01T10:01:00Z",
             "prompt": "second",
             "response": "response 2",
-            "parent_id": "r1"
+            "parent_id": "r1",
+            "options_json": "{}",
         })
         
         mock_db["responses"].insert({
@@ -119,7 +123,8 @@ def test_response_chain_building(mock_db):
             "datetime_utc": "2024-01-01T10:02:00Z",
             "prompt": "third",
             "response": "response 3",
-            "parent_id": "r2"
+            "parent_id": "r2",
+            "options_json": "{}",
         })
 
         # Set head to most recent response
@@ -127,4 +132,4 @@ def test_response_chain_building(mock_db):
 
         conversation = new_load_conversation("test-conv-1")
         assert len(conversation.responses) == 3
-        assert [r.prompt for r in conversation.responses] == ["first", "second", "third"]
+        assert [r.prompt.prompt for r in conversation.responses] == ["first", "second", "third"]
