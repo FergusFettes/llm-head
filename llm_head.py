@@ -123,13 +123,14 @@ def patched_log_to_db(self, db, parent_id=None):
 
 def patched_from_row(cls, db, row):
     # Call original implementation from global
-    response = from_row(cls, db, row)
+    response = original_from_row(cls, db, row)
     response.parent_id = row.get("parent_id", None)
+    return response
 
 
 # Store original
 original_log_to_db = Response.log_to_db
-from_row = Response.from_row
+original_from_row = Response.from_row
 
 # THEN apply patches
 Response.log_to_db = patched_log_to_db
