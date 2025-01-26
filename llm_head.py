@@ -11,7 +11,7 @@ from click_default_group import DefaultGroup
 
 # Store originals in global scope
 original_log_to_db = None
-original_load_conversation = None
+original_from_row = None
 
 
 @migration
@@ -97,13 +97,13 @@ def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversati
     # Build the response chain by following parents
     response_chain = []
     while head and head in responses:
-        current = Response.from_row(responses[head])
+        current = Response.from_row(db, responses[head])
         response_chain.append(current)
         head = get_parent_id(current, db)
 
     # Create conversation and add responses in chronological order
     conversation = Conversation.from_row(row)
-    conversation.responses = [Response.from_row(db, r) for r in reversed(response_chain)]
+    conversation.responses = list(reversed(response_chain))
     return conversation
 
 
@@ -114,21 +114,32 @@ def patched_log_to_db(self, db, parent_id=None):
     # Get the most recent response
     response = next(db.query('SELECT * FROM responses ORDER BY datetime_utc DESC LIMIT 1'))
 
+    # Set the parent ID
+    db['responses'].upsert({'key': response['id'], 'parent_id': parent_id}, pk='key')
+
     # Add our head tracking code
     db['state'].upsert({'key': 'head', 'value': response['id']}, pk='key')
 
 
+def patched_from_row(cls, db, row):
+    # Call original implementation from global
+    response = from_row(cls, db, row)
+    response.parent_id = row.get("parent_id", None)
+
+
+# Store original
+original_log_to_db = Response.log_to_db
+from_row = Response.from_row
+
+# THEN apply patches
+Response.log_to_db = patched_log_to_db
+Response.from_row = classmethod(patched_from_row)
+Response.parent_id = None
+lcli.load_conversation = new_load_conversation
+
+
 @llm.hookimpl
 def register_commands(cli):
-    global original_log_to_db
-    
-    # Store original
-    original_log_to_db = Response.log_to_db
-    
-    # THEN apply patches
-    Response.log_to_db = patched_log_to_db
-    lcli.load_conversation = new_load_conversation
-
     @cli.group(
         cls=DefaultGroup,
         default="show",
