@@ -103,7 +103,7 @@ def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversati
 
     # Create conversation and add responses in chronological order
     conversation = Conversation.from_row(row)
-    conversation.responses = list(reversed(response_chain))
+    conversation.responses = [Response.from_row(db, r) for r in reversed(response_chain)]
     return conversation
 
 
