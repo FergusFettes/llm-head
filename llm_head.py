@@ -1,7 +1,7 @@
 import json
 import llm
 import llm.cli as lcli
-from llm.cli import logs_db_path, _conversation_name
+from llm.cli import logs_db_path, _conversation_name, load_conversation as original_load_conversation
 from llm.models import Response, Conversation
 from llm.migrations import migration, migrate
 import sqlite_utils
@@ -63,115 +63,43 @@ def get_parent_id(response, db):
     return None
 
 
-def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
+def patched_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
+    # Call original implementation
+    conv = original_load_conversation(conversation_id)
+    if not conv:
+        return conv
+    
+    # Add our head tracking logic
     db = sqlite_utils.Database(logs_db_path())
-    migrate(db)
+    head_id = get_head(db)
+    if head_id:
+        # Reorder responses based on head
+        response_dict = {r.id: r for r in conv.responses}
+        response_chain = []
+        current_id = head_id
+        while current_id in response_dict:
+            response_chain.append(response_dict[current_id])
+            current_id = get_parent_id(response_dict[current_id], db)
+        conv.responses = list(reversed(response_chain))
     
-    if conversation_id is None:
-        conversation_id = get_most_recent_active_conversation(db)
-        if conversation_id is None:
-            return None
-
-    try:
-        row = db["conversations"].get(conversation_id)
-    except sqlite_utils.db.NotFoundError:
-        raise click.ClickException(
-            "No conversation found with id={}".format(conversation_id)
-        )
-
-    responses = {
-        r["id"]: r for r in db["responses"].rows_where(
-            "conversation_id = ?", [conversation_id]
-        )
-    }
-
-    if not responses:
-        return Conversation.from_row(row)
-
-    head = get_head(db) or max(responses.values(), key=lambda r: r["datetime_utc"])["id"]
-
-    response_chain = []
-    while head and head in responses:
-        current = Response.from_row(responses[head])
-        response_chain.append(current)
-        head = get_parent_id(current, db)
-
-    conversation = Conversation.from_row(row)
-    conversation.responses = list(reversed(response_chain))
-    return conversation
+    return conv
 
 
-def new_log_to_db(self, db, parent_id=None):
-    conversation = self.conversation
-    if not conversation:
-        conversation = Conversation(model=self.model)
-    db["conversations"].insert(
-        {
-            "id": conversation.id,
-            "name": _conversation_name(
-                self.prompt.prompt or self.prompt.system or ""
-            ),
-            "model": conversation.model.model_id,
-        },
-        ignore=True,
-    )
-    response_id = str(ULID()).lower()
-    response = {
-        "id": response_id,
-        "model": self.model.model_id,
-        "prompt": self.prompt.prompt,
-        "system": self.prompt.system,
-        "prompt_json": self._prompt_json,
-        "options_json": {
-            key: value
-            for key, value in dict(self.prompt.options).items()
-            if value is not None
-        },
-        "response": self.text_or_raise(),
-        "response_json": self.json(),
-        "conversation_id": conversation.id,
-        "duration_ms": self.duration_ms(),
-        "datetime_utc": self.datetime_utc(),
-        "input_tokens": self.input_tokens,
-        "output_tokens": self.output_tokens,
-        "token_details": (
-            json.dumps(self.token_details) if self.token_details else None
-        ),
-        "parent_id": parent_id,
-    }
-    db["responses"].insert(response)
-    # Persist any attachments - loop through with index
-    for index, attachment in enumerate(self.prompt.attachments):
-        attachment_id = attachment.id()
-        db["attachments"].insert(
-            {
-                "id": attachment_id,
-                "type": attachment.resolve_type(),
-                "path": attachment.path,
-                "url": attachment.url,
-                "content": attachment.content,
-            },
-            replace=True,
-        )
-        db["prompt_attachments"].insert(
-            {
-                "response_id": response_id,
-                "attachment_id": attachment_id,
-                "order": index,
-            },
-        )
-    
-    db['state'].upsert(
-        {'key': 'head', 'value': response_id},
-        pk='key'
-    )
+def patched_log_to_db(self, db, parent_id=None):
+    # Store original method
+    original_log_to_db = Response.log_to_db
+    # Call original implementation
+    original_log_to_db(self, db, parent_id)
+    # Only add our head tracking code
+    response_id = next(db.query("SELECT id FROM responses ORDER BY datetime_utc DESC LIMIT 1"))["id"]
+    db['state'].upsert({'key': 'head', 'value': response_id}, pk='key')
 
 
 @llm.hookimpl
 def register_commands(cli):
     # Apply patches after command registration
-    Response.log_to_db = new_log_to_db
-    lcli.load_conversation = new_load_conversation
+    Response.log_to_db = patched_log_to_db
+    lcli.load_conversation = patched_load_conversation
 
     @cli.group(
         cls=DefaultGroup,
