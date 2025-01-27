@@ -270,3 +270,41 @@ def register_commands(cli):
         click.echo("Starting parent ID population")
         populate_parent_ids(db)
         click.echo("Finished populating parent IDs")
+
+    @head.command(name="print")
+    def head_print():
+        "Print the current conversation neatly"
+        db = sqlite_utils.Database(logs_db_path())
+        migrate(db)
+
+        # Get current head
+        try:
+            head_id = db["state"].get("head")["value"]
+        except sqlite_utils.db.NotFoundError:
+            raise click.ClickException("No current head set")
+
+        try:
+            current = db["responses"].get(head_id)
+        except sqlite_utils.db.NotFoundError:
+            raise click.ClickException(f"Current head response {head_id} not found")
+
+        # Load the full conversation
+        conversation = new_load_conversation(current["conversation_id"])
+        if not conversation:
+            raise click.ClickException("Could not load conversation")
+
+        # Print conversation details
+        click.secho(f"\nConversation: {conversation.name} ({conversation.id})", fg="green", bold=True)
+        click.secho(f"Model: {conversation.model}\n", fg="green")
+
+        # Print each response with formatting
+        for i, response in enumerate(conversation.responses, 1):
+            is_head = response.id == head_id
+            prefix = "→" if is_head else " "
+            
+            click.secho(f"\n{prefix} Exchange {i}:", fg="blue", bold=True)
+            click.secho("Prompt:", fg="yellow")
+            click.echo(response.prompt.prompt)
+            click.secho("\nResponse:", fg="yellow")
+            click.echo(response.response.response)
+            click.secho(f"[ID: {response.id}]", fg="cyan")

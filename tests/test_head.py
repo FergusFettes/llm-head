@@ -165,3 +165,28 @@ def test_response_chain_building(mock_db):
         conversation = new_load_conversation("test-conv-1")
         assert len(conversation.responses) == 3
         assert [r.prompt.prompt for r in conversation.responses] == ["first", "second", "third"]
+
+
+def test_head_print_command(mock_db):
+    with patch('llm_head.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+        
+        # Add test data
+        mock_db["responses"].insert({
+            "id": "r1",
+            "conversation_id": "test-conv-1",
+            "datetime_utc": "2024-01-01T10:00:00Z",
+            "prompt": "test prompt",
+            "response": "test response",
+            "options_json": "{}",
+        })
+        
+        mock_db["state"].insert({"key": "head", "value": "r1"})
+        
+        from llm_head import head_print
+        
+        # Test that it runs without error
+        try:
+            head_print()
+        except Exception as e:
+            pytest.fail(f"head_print() raised {e} unexpectedly")
