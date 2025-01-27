@@ -149,7 +149,7 @@ def patched_log_to_db(self, db):
     parent_id = get_parent_id(response, db)
 
     # Set the parent ID
-    db['responses'].update({'id': response.id, 'parent_id': parent_id}, pk='id')
+    db['responses'].upsert({'id': response.id, 'parent_id': parent_id}, pk='id')
 
     # Add head tracking
     db['state'].upsert({'key': 'head', 'value': response.id}, pk='key')
@@ -193,13 +193,14 @@ def format_conversation(db):
 
     for i, response in enumerate(conversation.responses, 1):
         is_head = response.id == head_id
-        prefix = "→" if is_head else " "
+        prefix = "→ " if is_head else ""
         
-        lines.append(f"\n{prefix} Exchange {i} ({response.id}):")
+        lines.append(f"{prefix}Exchange {i} -- {response.id}")
         lines.append("Prompt:")
         lines.append(response.prompt.prompt)
         lines.append("\nResponse:")
         lines.append(response.text())
+        lines.append("\n")
 
     return "\n".join(lines), None
 
@@ -348,19 +349,6 @@ def register_commands(cli):
             if error:
                 raise click.ClickException(error)
 
-            # Print with colors
-            for line in formatted.split("\n"):
-                if line.startswith("Conversation:") or line.startswith("Model:"):
-                    click.secho(line, fg="green", bold=True)
-                elif line.startswith(("→ Exchange", " Exchange")):
-                    click.secho(line, fg="blue", bold=True)
-                elif line.startswith("Prompt:") or line.startswith("Response:"):
-                    click.secho(line, fg="yellow")
-                elif line.startswith("[ID:"):
-                    click.secho(line, fg="cyan")
-                else:
-                    click.echo(line)
-
         finally:
             # Restore original head if we had one
             if original_head:
@@ -372,7 +360,7 @@ def register_commands(cli):
         for line in formatted.split("\n"):
             if line.startswith("Conversation:") or line.startswith("Model:"):
                 click.secho(line, fg="green", bold=True)
-            elif line.startswith(("→ Exchange", " Exchange")):
+            elif line.startswith(("→ Exchange", "Exchange")):
                 click.secho(line, fg="blue", bold=True)
             elif line.startswith("Prompt:") or line.startswith("Response:"):
                 click.secho(line, fg="yellow")
@@ -390,7 +378,7 @@ def register_commands(cli):
         migrate(db)
 
         # Get conversation stats with dynamic sorting
-        order_by = "last_active DESC" if sort == 'time' else "response_count ASC"
+        order_by = "last_active ASC" if sort == 'time' else "response_count ASC"
         conversations = db.query(f"""
             SELECT 
                 c.id,

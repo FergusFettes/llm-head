@@ -1,6 +1,6 @@
 [project]
 name = "llm-head"
-version = "0.1.0"
+version = "0.1.1"
 description = "Allow forking and backtracking."
 readme = "README.md"
 authors = [{name = "Fergus Fettes"}]
@@ -15,7 +15,7 @@ Homepage = "https://github.com/fergusfettes/llm-head"
 Issues = "https://github.com/fergusfettes/llm-head/issues"
 
 [project.entry-points.llm]
-cmd = "llm_head"
+head = "llm_head"
 
 [project.optional-dependencies]
 test = ["pytest"]
