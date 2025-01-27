@@ -93,6 +93,38 @@ def test_load_most_recent_conversation(mock_db):
         assert conversation.name == "More Recent Conv"
 
 
+def test_populate_parent_ids(mock_db):
+    with patch('llm_head.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+        
+        # Add responses without parent IDs
+        mock_db["responses"].insert({
+            "id": "r1",
+            "conversation_id": "test-conv-1",
+            "datetime_utc": "2024-01-01T10:00:00Z",
+            "prompt": "first",
+            "response": "response 1",
+            "options_json": "{}",
+        })
+        
+        mock_db["responses"].insert({
+            "id": "r2",
+            "conversation_id": "test-conv-1",
+            "datetime_utc": "2024-01-01T10:01:00Z",
+            "prompt": "second",
+            "response": "response 2",
+            "options_json": "{}",
+        })
+        
+        # Run the populate function
+        from llm_head import populate_parent_ids
+        populate_parent_ids(mock_db)
+        
+        # Check that parent IDs were set correctly
+        r2 = mock_db["responses"].get("r2")
+        assert r2["parent_id"] == "r1"
+
+
 def test_response_chain_building(mock_db):
     with patch('llm_head.logs_db_path', return_value=':memory:'), \
          patch('llm_head.sqlite_utils.Database', return_value=mock_db):

@@ -6,7 +6,11 @@ from llm.migrations import migration, migrate
 import sqlite_utils
 from typing import Optional, cast
 import click
+import logging
 from click_default_group import DefaultGroup
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # Store original
@@ -64,6 +68,39 @@ def get_parent_id(response, db):
     if parent:
         return parent['id']
     return None
+
+
+def populate_parent_ids(db):
+    """Populate parent_ids for all responses in the database"""
+    # Get all conversations
+    conversations = db["conversations"].rows
+    
+    for conv in conversations:
+        conv_id = conv["id"]
+        # Get all responses for this conversation ordered by time
+        responses = list(db["responses"].rows_where(
+            "conversation_id = ? ORDER BY datetime_utc ASC",
+            [conv_id]
+        ))
+        
+        logger.info(f"Processing conversation {conv_id} with {len(responses)} responses")
+        
+        # Skip if no responses
+        if not responses:
+            continue
+            
+        # For each response except the first
+        for i in range(1, len(responses)):
+            current = responses[i]
+            parent = responses[i-1]
+            
+            # Update parent_id if not already set
+            if not current.get("parent_id"):
+                db["responses"].update(
+                    current["id"],
+                    {"parent_id": parent["id"]},
+                    alter=True
+                )
 
 
 def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
@@ -227,3 +264,13 @@ def register_commands(cli):
             click.echo(response["response"])
         except sqlite_utils.db.NotFoundError:
             click.echo("No head currently set")
+
+    @head.command(name="populate")
+    def head_populate():
+        "Populate parent IDs for all existing conversations"
+        db = sqlite_utils.Database(logs_db_path())
+        migrate(db)
+        
+        logger.info("Starting parent ID population")
+        populate_parent_ids(db)
+        logger.info("Finished populating parent IDs")
