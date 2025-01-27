@@ -162,6 +162,50 @@ def patched_from_row(cls, db, row):
     return response
 
 
+def format_conversation(db, head_id=None):
+    """Format the current conversation for display
+    
+    Args:
+        db: sqlite_utils.Database instance
+        head_id: Optional response ID to mark as current head
+        
+    Returns:
+        tuple of (formatted_text, error_message)
+        formatted_text will be None if there was an error
+        error_message will be None if formatting succeeded
+    """
+    try:
+        if not head_id:
+            head_id = db["state"].get("head")["value"]
+    except sqlite_utils.db.NotFoundError:
+        return None, "No current head set"
+
+    try:
+        current = db["responses"].get(head_id)
+    except sqlite_utils.db.NotFoundError:
+        return None, f"Current head response {head_id} not found"
+
+    conversation = new_load_conversation(current["conversation_id"])
+    if not conversation:
+        return None, "Could not load conversation"
+
+    lines = []
+    lines.append(f"\nConversation: {conversation.name} ({conversation.id})")
+    lines.append(f"Model: {conversation.model}\n")
+
+    for i, response in enumerate(conversation.responses, 1):
+        is_head = response.id == head_id
+        prefix = "→" if is_head else " "
+        
+        lines.append(f"\n{prefix} Exchange {i} ({response.id}):")
+        lines.append("Prompt:")
+        lines.append(response.prompt.prompt)
+        lines.append("\nResponse:")
+        lines.append(response.text())
+
+    return "\n".join(lines), None
+
+
 # Apply patches
 Response.log_to_db = patched_log_to_db
 Response.from_row = classmethod(patched_from_row)
@@ -270,50 +314,6 @@ def register_commands(cli):
         click.echo("Starting parent ID population")
         populate_parent_ids(db)
         click.echo("Finished populating parent IDs")
-
-    def format_conversation(db, head_id=None):
-        """Format the current conversation for display
-        
-        Args:
-            db: sqlite_utils.Database instance
-            head_id: Optional response ID to mark as current head
-            
-        Returns:
-            tuple of (formatted_text, error_message)
-            formatted_text will be None if there was an error
-            error_message will be None if formatting succeeded
-        """
-        try:
-            if not head_id:
-                head_id = db["state"].get("head")["value"]
-        except sqlite_utils.db.NotFoundError:
-            return None, "No current head set"
-
-        try:
-            current = db["responses"].get(head_id)
-        except sqlite_utils.db.NotFoundError:
-            return None, f"Current head response {head_id} not found"
-
-        conversation = new_load_conversation(current["conversation_id"])
-        if not conversation:
-            return None, "Could not load conversation"
-
-        lines = []
-        lines.append(f"\nConversation: {conversation.name} ({conversation.id})")
-        lines.append(f"Model: {conversation.model}\n")
-
-        for i, response in enumerate(conversation.responses, 1):
-            is_head = response.id == head_id
-            prefix = "→" if is_head else " "
-            
-            lines.append(f"\n{prefix} Exchange {i}:")
-            lines.append("Prompt:")
-            lines.append(response.prompt.prompt)
-            lines.append("\nResponse:")
-            lines.append(response.response.response)
-            lines.append(f"[ID: {response.id}]")
-
-        return "\n".join(lines), None
 
     @head.command(name="print")
     def head_print():
