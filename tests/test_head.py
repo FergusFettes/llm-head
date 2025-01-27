@@ -2,7 +2,7 @@ import pytest
 import sqlite_utils
 import click
 from llm.plugins import pm
-from llm_head import new_load_conversation, m012_track_current_conversation
+from llm_head import new_load_conversation
 from unittest.mock import patch
 from llm.migrations import migrate
 
