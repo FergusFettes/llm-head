@@ -179,13 +179,15 @@ def format_conversation(db, head_id=None, conversation_id=None):
         if not conversation:
             return None, f"Could not load conversation {conversation_id}"
         
-        # Use most recent response as head if not specified
-        if not head_id:
-            responses = list(db["responses"].rows_where(
-                "conversation_id = ? ORDER BY datetime_utc DESC LIMIT 1",
-                [conversation_id]
-            ))
-            head_id = responses[0]["id"] if responses else None
+        # Always get the latest response for the specified conversation
+        responses = list(db["responses"].rows_where(
+            "conversation_id = ? ORDER BY datetime_utc DESC LIMIT 1",
+            [conversation_id]
+        ))
+        if not responses:
+            return None, f"No responses found in conversation {conversation_id}"
+        
+        head_id = responses[0]["id"]
     else:
         try:
             if not head_id:
