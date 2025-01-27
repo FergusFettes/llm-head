@@ -337,3 +337,44 @@ def register_commands(cli):
                 click.secho(line, fg="cyan")
             else:
                 click.echo(line)
+
+    @head.command(name="list")
+    def head_list():
+        "List all conversations and their response counts"
+        db = sqlite_utils.Database(logs_db_path())
+        migrate(db)
+
+        # Get conversation stats
+        conversations = db.query("""
+            SELECT 
+                c.id,
+                c.name,
+                c.model,
+                COUNT(r.id) as response_count,
+                MAX(r.datetime_utc) as last_active
+            FROM conversations c
+            LEFT JOIN responses r ON c.id = r.conversation_id
+            GROUP BY c.id
+            ORDER BY last_active DESC
+        """)
+
+        # Get current head conversation
+        try:
+            head_id = db["state"].get("head")["value"]
+            head_conv = db["responses"].get(head_id)["conversation_id"]
+        except (sqlite_utils.db.NotFoundError, TypeError):
+            head_conv = None
+
+        # Print conversations
+        for conv in conversations:
+            prefix = "→" if conv["id"] == head_conv else " "
+            click.secho(
+                f"\n{prefix} {conv['name']} ({conv['id']})",
+                fg="green", bold=True
+            )
+            click.secho(f"    Model: {conv['model']}", fg="blue")
+            click.secho(
+                f"    Responses: {conv['response_count']} | "
+                f"Last active: {conv['last_active'] or 'Never'}",
+                fg="yellow"
+            )

@@ -202,3 +202,51 @@ def test_format_conversation(mock_db):
         formatted, error = format_conversation(mock_db)
         assert error is None
         assert "Test Conversation" in formatted
+
+
+def test_list_conversations(mock_db):
+    # Add another conversation
+    mock_db["conversations"].insert({
+        "id": "test-conv-2",
+        "name": "Another Test",
+        "model": "gpt-4"
+    })
+    
+    # Add responses with different timestamps
+    mock_db["responses"].insert([
+        {
+            "id": "r1",
+            "conversation_id": "test-conv-1",
+            "datetime_utc": "2024-01-01T10:00:00Z",
+            "prompt": "test1",
+            "response": "response1",
+            "options_json": "{}"
+        },
+        {
+            "id": "r2",
+            "conversation_id": "test-conv-1",
+            "datetime_utc": "2024-01-01T11:00:00Z",
+            "prompt": "test2", 
+            "response": "response2",
+            "options_json": "{}"
+        },
+        {
+            "id": "r3",
+            "conversation_id": "test-conv-2",
+            "datetime_utc": "2024-01-02T10:00:00Z",
+            "prompt": "test3",
+            "response": "response3",
+            "options_json": "{}"
+        }
+    ])
+
+    # Set current head
+    mock_db["state"].insert({"key": "head", "value": "r3"})
+
+    from llm_head import head_list
+    
+    # Test that it runs without error
+    try:
+        head_list()
+    except Exception as e:
+        pytest.fail(f"head_list() raised {e} unexpectedly")
