@@ -162,7 +162,7 @@ def patched_from_row(cls, db, row):
     return response
 
 
-def format_conversation(db, head_id=None):
+def format_conversation(db, head_id=None, conversation_id=None):
     """Format the current conversation for display
     
     Args:
@@ -174,18 +174,31 @@ def format_conversation(db, head_id=None):
         formatted_text will be None if there was an error
         error_message will be None if formatting succeeded
     """
-    try:
+    if conversation_id:
+        conversation = new_load_conversation(conversation_id)
+        if not conversation:
+            return None, f"Could not load conversation {conversation_id}"
+        
+        # Use most recent response as head if not specified
         if not head_id:
-            head_id = db["state"].get("head")["value"]
-    except sqlite_utils.db.NotFoundError:
-        return None, "No current head set"
+            responses = list(db["responses"].rows_where(
+                "conversation_id = ? ORDER BY datetime_utc DESC LIMIT 1",
+                [conversation_id]
+            ))
+            head_id = responses[0]["id"] if responses else None
+    else:
+        try:
+            if not head_id:
+                head_id = db["state"].get("head")["value"]
+        except sqlite_utils.db.NotFoundError:
+            return None, "No current head set"
 
-    try:
-        current = db["responses"].get(head_id)
-    except sqlite_utils.db.NotFoundError:
-        return None, f"Current head response {head_id} not found"
+        try:
+            current = db["responses"].get(head_id)
+        except sqlite_utils.db.NotFoundError:
+            return None, f"Current head response {head_id} not found"
 
-    conversation = new_load_conversation(current["conversation_id"])
+        conversation = new_load_conversation(current["conversation_id"])
     if not conversation:
         return None, "Could not load conversation"
 
@@ -316,12 +329,18 @@ def register_commands(cli):
         click.echo("Finished populating parent IDs")
 
     @head.command(name="print")
-    def head_print():
-        "Print the current conversation neatly"
+    @click.argument("conversation_id", required=False)
+    def head_print(conversation_id):
+        "Print a conversation neatly. Defaults to current conversation if no ID provided"
         db = sqlite_utils.Database(logs_db_path())
         migrate(db)
 
-        formatted, error = format_conversation(db)
+        if conversation_id:
+            # If ID provided, load that specific conversation
+            formatted, error = format_conversation(db, conversation_id=conversation_id)
+        else:
+            # Otherwise load current head conversation
+            formatted, error = format_conversation(db)
         if error:
             raise click.ClickException(error)
 
@@ -372,7 +391,7 @@ def register_commands(cli):
         for conv in conversations:
             prefix = "→" if conv["id"] == head_conv else " "
             click.secho(
-                f"\n{prefix} {conv['name']} ({conv['id']})",
+                f"\n{prefix} {conv['name']} -- {conv['id']}",
                 fg="green", bold=True
             )
             click.secho(f"    Model: {conv['model']}", fg="blue")
