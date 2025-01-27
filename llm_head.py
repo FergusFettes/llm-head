@@ -6,11 +6,7 @@ from llm.migrations import migration, migrate
 import sqlite_utils
 from typing import Optional, cast
 import click
-import logging
 from click_default_group import DefaultGroup
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 # Store original
@@ -83,7 +79,7 @@ def populate_parent_ids(db):
             [conv_id]
         ))
         
-        logger.info(f"Processing conversation {conv_id} with {len(responses)} responses")
+        click.echo(f"Processing conversation {conv_id} with {len(responses)} responses")
         
         # Skip if no responses
         if not responses:
@@ -153,7 +149,7 @@ def patched_log_to_db(self, db):
     parent_id = get_parent_id(response, db)
 
     # Set the parent ID
-    db['responses'].upsert({'id': response.id, 'parent_id': parent_id}, pk='id')
+    db['responses'].update({'id': response.id, 'parent_id': parent_id}, pk='id')
 
     # Add head tracking
     db['state'].upsert({'key': 'head', 'value': response.id}, pk='key')
@@ -271,6 +267,6 @@ def register_commands(cli):
         db = sqlite_utils.Database(logs_db_path())
         migrate(db)
         
-        logger.info("Starting parent ID population")
+        click.echo("Starting parent ID population")
         populate_parent_ids(db)
-        logger.info("Finished populating parent IDs")
+        click.echo("Finished populating parent IDs")
