@@ -339,13 +339,16 @@ def register_commands(cli):
                 click.echo(line)
 
     @head.command(name="list")
-    def head_list():
+    @click.option('--sort', type=click.Choice(['time', 'length']), default='time',
+                 help='Sort by last active time (default) or conversation length')
+    def head_list(sort):
         "List all conversations and their response counts"
         db = sqlite_utils.Database(logs_db_path())
         migrate(db)
 
-        # Get conversation stats
-        conversations = db.query("""
+        # Get conversation stats with dynamic sorting
+        order_by = "last_active DESC" if sort == 'time' else "response_count ASC"
+        conversations = db.query(f"""
             SELECT 
                 c.id,
                 c.name,
@@ -355,7 +358,7 @@ def register_commands(cli):
             FROM conversations c
             LEFT JOIN responses r ON c.id = r.conversation_id
             GROUP BY c.id
-            ORDER BY last_active DESC
+            ORDER BY {order_by}
         """)
 
         # Get current head conversation
