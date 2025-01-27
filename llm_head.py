@@ -271,40 +271,69 @@ def register_commands(cli):
         populate_parent_ids(db)
         click.echo("Finished populating parent IDs")
 
+    def format_conversation(db, head_id=None):
+        """Format the current conversation for display
+        
+        Args:
+            db: sqlite_utils.Database instance
+            head_id: Optional response ID to mark as current head
+            
+        Returns:
+            tuple of (formatted_text, error_message)
+            formatted_text will be None if there was an error
+            error_message will be None if formatting succeeded
+        """
+        try:
+            if not head_id:
+                head_id = db["state"].get("head")["value"]
+        except sqlite_utils.db.NotFoundError:
+            return None, "No current head set"
+
+        try:
+            current = db["responses"].get(head_id)
+        except sqlite_utils.db.NotFoundError:
+            return None, f"Current head response {head_id} not found"
+
+        conversation = new_load_conversation(current["conversation_id"])
+        if not conversation:
+            return None, "Could not load conversation"
+
+        lines = []
+        lines.append(f"\nConversation: {conversation.name} ({conversation.id})")
+        lines.append(f"Model: {conversation.model}\n")
+
+        for i, response in enumerate(conversation.responses, 1):
+            is_head = response.id == head_id
+            prefix = "→" if is_head else " "
+            
+            lines.append(f"\n{prefix} Exchange {i}:")
+            lines.append("Prompt:")
+            lines.append(response.prompt.prompt)
+            lines.append("\nResponse:")
+            lines.append(response.response.response)
+            lines.append(f"[ID: {response.id}]")
+
+        return "\n".join(lines), None
+
     @head.command(name="print")
     def head_print():
         "Print the current conversation neatly"
         db = sqlite_utils.Database(logs_db_path())
         migrate(db)
 
-        # Get current head
-        try:
-            head_id = db["state"].get("head")["value"]
-        except sqlite_utils.db.NotFoundError:
-            raise click.ClickException("No current head set")
+        formatted, error = format_conversation(db)
+        if error:
+            raise click.ClickException(error)
 
-        try:
-            current = db["responses"].get(head_id)
-        except sqlite_utils.db.NotFoundError:
-            raise click.ClickException(f"Current head response {head_id} not found")
-
-        # Load the full conversation
-        conversation = new_load_conversation(current["conversation_id"])
-        if not conversation:
-            raise click.ClickException("Could not load conversation")
-
-        # Print conversation details
-        click.secho(f"\nConversation: {conversation.name} ({conversation.id})", fg="green", bold=True)
-        click.secho(f"Model: {conversation.model}\n", fg="green")
-
-        # Print each response with formatting
-        for i, response in enumerate(conversation.responses, 1):
-            is_head = response.id == head_id
-            prefix = "→" if is_head else " "
-            
-            click.secho(f"\n{prefix} Exchange {i}:", fg="blue", bold=True)
-            click.secho("Prompt:", fg="yellow")
-            click.echo(response.prompt.prompt)
-            click.secho("\nResponse:", fg="yellow")
-            click.echo(response.response.response)
-            click.secho(f"[ID: {response.id}]", fg="cyan")
+        # Print with colors
+        for line in formatted.split("\n"):
+            if line.startswith("Conversation:") or line.startswith("Model:"):
+                click.secho(line, fg="green", bold=True)
+            elif line.startswith(("→ Exchange", " Exchange")):
+                click.secho(line, fg="blue", bold=True)
+            elif line.startswith("Prompt:") or line.startswith("Response:"):
+                click.secho(line, fg="yellow")
+            elif line.startswith("[ID:"):
+                click.secho(line, fg="cyan")
+            else:
+                click.echo(line)
