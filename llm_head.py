@@ -162,45 +162,28 @@ def patched_from_row(cls, db, row):
     return response
 
 
-def format_conversation(db, head_id=None, conversation_id=None):
+def format_conversation(db):
     """Format the current conversation for display
     
     Args:
         db: sqlite_utils.Database instance
-        head_id: Optional response ID to mark as current head
         
     Returns:
         tuple of (formatted_text, error_message)
         formatted_text will be None if there was an error
         error_message will be None if formatting succeeded
     """
-    if conversation_id:
-        conversation = new_load_conversation(conversation_id)
-        if not conversation:
-            return None, f"Could not load conversation {conversation_id}"
-        
-        # Always get the latest response for the specified conversation
-        responses = list(db["responses"].rows_where(
-            "conversation_id = ? ORDER BY datetime_utc DESC LIMIT 1",
-            [conversation_id]
-        ))
-        if not responses:
-            return None, f"No responses found in conversation {conversation_id}"
-        
-        head_id = responses[0]["id"]
-    else:
-        try:
-            if not head_id:
-                head_id = db["state"].get("head")["value"]
-        except sqlite_utils.db.NotFoundError:
-            return None, "No current head set"
+    try:
+        head_id = db["state"].get("head")["value"]
+    except sqlite_utils.db.NotFoundError:
+        return None, "No current head set"
 
-        try:
-            current = db["responses"].get(head_id)
-        except sqlite_utils.db.NotFoundError:
-            return None, f"Current head response {head_id} not found"
+    try:
+        current = db["responses"].get(head_id)
+    except sqlite_utils.db.NotFoundError:
+        return None, f"Current head response {head_id} not found"
 
-        conversation = new_load_conversation(current["conversation_id"])
+    conversation = new_load_conversation(current["conversation_id"])
     if not conversation:
         return None, "Could not load conversation"
 
@@ -337,12 +320,51 @@ def register_commands(cli):
         db = sqlite_utils.Database(logs_db_path())
         migrate(db)
 
-        if conversation_id:
-            # If ID provided, load that specific conversation
-            formatted, error = format_conversation(db, conversation_id=conversation_id)
-        else:
-            # Otherwise load current head conversation
+        # Store original head
+        original_head = None
+        try:
+            original_head = db["state"].get("head")["value"]
+        except sqlite_utils.db.NotFoundError:
+            pass
+
+        try:
+            if conversation_id:
+                # Get latest response for requested conversation
+                latest = next(db.query("""
+                    SELECT id FROM responses 
+                    WHERE conversation_id = ? 
+                    ORDER BY datetime_utc DESC 
+                    LIMIT 1
+                """, [conversation_id]), None)
+                
+                if not latest:
+                    raise click.ClickException(f"No responses found in conversation {conversation_id}")
+                
+                # Temporarily set head to this conversation's latest response
+                db["state"].upsert({"key": "head", "value": latest["id"]}, pk="key")
+            
+            # Format using current head
             formatted, error = format_conversation(db)
+            if error:
+                raise click.ClickException(error)
+
+            # Print with colors
+            for line in formatted.split("\n"):
+                if line.startswith("Conversation:") or line.startswith("Model:"):
+                    click.secho(line, fg="green", bold=True)
+                elif line.startswith(("→ Exchange", " Exchange")):
+                    click.secho(line, fg="blue", bold=True)
+                elif line.startswith("Prompt:") or line.startswith("Response:"):
+                    click.secho(line, fg="yellow")
+                elif line.startswith("[ID:"):
+                    click.secho(line, fg="cyan")
+                else:
+                    click.echo(line)
+
+        finally:
+            # Restore original head if we had one
+            if original_head:
+                db["state"].upsert({"key": "head", "value": original_head}, pk="key")
         if error:
             raise click.ClickException(error)
 
