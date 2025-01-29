@@ -1,5 +1,6 @@
 import click
-from llm.migrations import migration
+from llm.migrations import migration, migrate
+
 
 @migration
 def m012_track_current_conversation(db):
@@ -11,6 +12,7 @@ def m012_track_current_conversation(db):
         pk="key"
     )
     db["responses"].add_column("parent_id", str)
+    db["conversations"].add_column("tags", str)
 
 
 def populate_parent_ids(db):

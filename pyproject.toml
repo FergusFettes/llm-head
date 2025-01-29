@@ -15,7 +15,7 @@ Homepage = "https://github.com/fergusfettes/llm-head"
 Issues = "https://github.com/fergusfettes/llm-head/issues"
 
 [project.entry-points.llm]
-head = "llm_head"
+head = "llm_head.main"
 
 [project.optional-dependencies]
 test = ["pytest"]
