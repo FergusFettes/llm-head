@@ -13,6 +13,30 @@ original_log_to_db = Response.log_to_db
 original_from_row = Response.from_row
 
 
+def print_formatted_conversation(formatted_text, error=None):
+    """Print a formatted conversation with colors
+    
+    Args:
+        formatted_text: The formatted conversation text
+        error: Optional error message
+    """
+    if error:
+        raise click.ClickException(error)
+
+    # Print with colors
+    for line in formatted_text.split("\n"):
+        if line.startswith("Conversation:") or line.startswith("Model:"):
+            click.secho(line, fg="green", bold=True)
+        elif line.startswith(("→ Exchange", "Exchange")):
+            click.secho(line, fg="blue", bold=True)
+        elif line.startswith("Prompt:") or line.startswith("Response:"):
+            click.secho(line, fg="yellow")
+        elif line.startswith("[ID:"):
+            click.secho(line, fg="cyan")
+        else:
+            click.echo(line)
+
+
 def print_conversation_list(db, sort='time'):
     """Print numbered list of all conversations with stats
     

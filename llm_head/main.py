@@ -1,7 +1,7 @@
 from .migrations import populate_parent_ids, migrate
 from .dag import (
     format_conversation, patched_from_row, patched_log_to_db,
-    new_load_conversation, print_conversation_list
+    new_load_conversation, print_conversation_list, print_formatted_conversation
 )
 
 import llm
@@ -186,18 +186,7 @@ def register_commands(cli):
         if error:
             raise click.ClickException(error)
 
-        # Print with colors
-        for line in formatted.split("\n"):
-            if line.startswith("Conversation:") or line.startswith("Model:"):
-                click.secho(line, fg="green", bold=True)
-            elif line.startswith(("→ Exchange", "Exchange")):
-                click.secho(line, fg="blue", bold=True)
-            elif line.startswith("Prompt:") or line.startswith("Response:"):
-                click.secho(line, fg="yellow")
-            elif line.startswith("[ID:"):
-                click.secho(line, fg="cyan")
-            else:
-                click.echo(line)
+        print_formatted_conversation(formatted, error)
 
     @head.command(name="list") 
     @click.option('--sort', type=click.Choice(['time', 'length']), default='time',
