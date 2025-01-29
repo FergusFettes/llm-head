@@ -2,7 +2,8 @@ from unittest.mock import patch
 import pytest
 
 from llm.plugins import pm
-from llm_head import new_load_conversation, format_conversation
+from llm_head.llm_head import new_load_conversation
+from llm_head.vis import format_conversation
 from llm.migrations import migrate
 
 import sqlite_utils
