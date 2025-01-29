@@ -1,5 +1,8 @@
 from .migrations import populate_parent_ids, migrate
-from .dag import format_conversation, patched_from_row, patched_log_to_db, new_load_conversation
+from .dag import (
+    format_conversation, patched_from_row, patched_log_to_db,
+    new_load_conversation, print_conversation_list
+)
 
 import llm
 import llm.cli as lcli
