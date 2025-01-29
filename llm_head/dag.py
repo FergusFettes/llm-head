@@ -13,6 +13,52 @@ original_log_to_db = Response.log_to_db
 original_from_row = Response.from_row
 
 
+def resolve_conversation_identifier(db, identifier):
+    """Resolve a conversation identifier (number or ID) to a conversation ID
+    
+    Args:
+        db: sqlite_utils.Database instance
+        identifier: String containing either a conversation number or ID
+        
+    Returns:
+        tuple of (conversation_id, latest_response_id, error_message)
+        conversation_id and latest_response_id will be None if there was an error
+    """
+    try:
+        if identifier.isdigit():
+            # Get conversations in current sort order
+            conversations = list(db.query("""
+                SELECT id FROM conversations c
+                LEFT JOIN responses r ON c.id = r.conversation_id
+                GROUP BY c.id
+                ORDER BY MAX(r.datetime_utc) DESC
+            """))
+            
+            idx = int(identifier) - 1
+            if idx < 0 or idx >= len(conversations):
+                return None, None, f"Invalid conversation number: {identifier}"
+            
+            conversation_id = conversations[idx]["id"]
+        else:
+            conversation_id = identifier
+
+        # Get latest response for requested conversation
+        latest = next(db.query("""
+            SELECT id FROM responses 
+            WHERE conversation_id = ? 
+            ORDER BY datetime_utc DESC 
+            LIMIT 1
+        """, [conversation_id]), None)
+        
+        if not latest:
+            return None, None, f"No responses found in conversation {conversation_id}"
+            
+        return conversation_id, latest["id"], None
+        
+    except ValueError:
+        return None, None, f"Invalid conversation identifier: {identifier}"
+
+
 def print_formatted_conversation(formatted_text, error=None):
     """Print a formatted conversation with colors
     

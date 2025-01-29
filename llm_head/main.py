@@ -1,7 +1,8 @@
 from .migrations import populate_parent_ids, migrate
 from .dag import (
     format_conversation, patched_from_row, patched_log_to_db,
-    new_load_conversation, print_conversation_list, print_formatted_conversation
+    new_load_conversation, print_conversation_list, print_formatted_conversation,
+    resolve_conversation_identifier
 )
 
 import llm
@@ -139,40 +140,12 @@ def register_commands(cli):
 
         try:
             if identifier:
-                # Check if identifier is a number
-                try:
-                    if identifier.isdigit():
-                        # Get conversations in current sort order
-                        conversations = list(db.query("""
-                            SELECT id FROM conversations c
-                            LEFT JOIN responses r ON c.id = r.conversation_id
-                            GROUP BY c.id
-                            ORDER BY MAX(r.datetime_utc) DESC
-                        """))
-                        
-                        idx = int(identifier) - 1
-                        if idx < 0 or idx >= len(conversations):
-                            raise click.ClickException(f"Invalid conversation number: {identifier}")
-                        
-                        conversation_id = conversations[idx]["id"]
-                    else:
-                        conversation_id = identifier
-
-                    # Get latest response for requested conversation
-                    latest = next(db.query("""
-                        SELECT id FROM responses 
-                        WHERE conversation_id = ? 
-                        ORDER BY datetime_utc DESC 
-                        LIMIT 1
-                    """, [conversation_id]), None)
-                    
-                    if not latest:
-                        raise click.ClickException(f"No responses found in conversation {conversation_id}")
-                except ValueError:
-                    raise click.ClickException(f"Invalid conversation identifier: {identifier}")
+                conversation_id, latest_id, error = resolve_conversation_identifier(db, identifier)
+                if error:
+                    raise click.ClickException(error)
                 
                 # Temporarily set head to this conversation's latest response
-                db["state"].upsert({"key": "head", "value": latest["id"]}, pk="key")
+                db["state"].upsert({"key": "head", "value": latest_id}, pk="key")
             
             # Format using current head
             formatted, error = format_conversation(db)
