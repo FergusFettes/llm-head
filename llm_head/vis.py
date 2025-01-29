@@ -1,4 +1,6 @@
 import click
+import sqlite_utils
+from ..llm_head import new_load_conversation
 
 def format_conversation(db):
     """Format the current conversation for display

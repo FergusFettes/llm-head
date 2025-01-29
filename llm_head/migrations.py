@@ -1,3 +1,4 @@
+import click
 from llm.migrations import migration
 
 @migration
