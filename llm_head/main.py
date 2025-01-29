@@ -121,9 +121,9 @@ def register_commands(cli):
         click.echo("Finished populating parent IDs")
 
     @head.command(name="print")
-    @click.argument("conversation_id", required=False)
-    def head_print(conversation_id):
-        "Print a conversation neatly. Defaults to current conversation if no ID provided"
+    @click.argument("identifier", required=False)
+    def head_print(identifier):
+        "Print a conversation neatly. Takes conversation ID or number from list. Defaults to current conversation."
         db = sqlite_utils.Database(logs_db_path())
         migrate(db)
 
@@ -135,17 +135,38 @@ def register_commands(cli):
             pass
 
         try:
-            if conversation_id:
-                # Get latest response for requested conversation
-                latest = next(db.query("""
-                    SELECT id FROM responses 
-                    WHERE conversation_id = ? 
-                    ORDER BY datetime_utc DESC 
-                    LIMIT 1
-                """, [conversation_id]), None)
-                
-                if not latest:
-                    raise click.ClickException(f"No responses found in conversation {conversation_id}")
+            if identifier:
+                # Check if identifier is a number
+                try:
+                    if identifier.isdigit():
+                        # Get conversations in current sort order
+                        conversations = list(db.query("""
+                            SELECT id FROM conversations c
+                            LEFT JOIN responses r ON c.id = r.conversation_id
+                            GROUP BY c.id
+                            ORDER BY MAX(r.datetime_utc) DESC
+                        """))
+                        
+                        idx = int(identifier) - 1
+                        if idx < 0 or idx >= len(conversations):
+                            raise click.ClickException(f"Invalid conversation number: {identifier}")
+                        
+                        conversation_id = conversations[idx]["id"]
+                    else:
+                        conversation_id = identifier
+
+                    # Get latest response for requested conversation
+                    latest = next(db.query("""
+                        SELECT id FROM responses 
+                        WHERE conversation_id = ? 
+                        ORDER BY datetime_utc DESC 
+                        LIMIT 1
+                    """, [conversation_id]), None)
+                    
+                    if not latest:
+                        raise click.ClickException(f"No responses found in conversation {conversation_id}")
+                except ValueError:
+                    raise click.ClickException(f"Invalid conversation identifier: {identifier}")
                 
                 # Temporarily set head to this conversation's latest response
                 db["state"].upsert({"key": "head", "value": latest["id"]}, pk="key")

@@ -13,6 +13,52 @@ original_log_to_db = Response.log_to_db
 original_from_row = Response.from_row
 
 
+def print_conversation_list(db, sort='time'):
+    """Print numbered list of all conversations with stats
+    
+    Args:
+        db: sqlite_utils.Database instance
+        sort: 'time' or 'length' to determine sort order
+    """
+    # Get conversation stats with dynamic sorting
+    order_by = "last_active DESC" if sort == 'time' else "response_count DESC"
+    conversations = list(db.query(f"""
+        SELECT 
+            c.id,
+            c.name,
+            c.model,
+            COUNT(r.id) as response_count,
+            MAX(r.datetime_utc) as last_active
+        FROM conversations c
+        LEFT JOIN responses r ON c.id = r.conversation_id
+        GROUP BY c.id
+        ORDER BY {order_by}
+    """))
+
+    # Get current head conversation
+    try:
+        head_id = db["state"].get("head")["value"]
+        head_conv = db["responses"].get(head_id)["conversation_id"]
+    except (sqlite_utils.db.NotFoundError, TypeError):
+        head_conv = None
+
+    # Print conversations
+    for i, conv in enumerate(conversations, 1):
+        prefix = "→" if conv["id"] == head_conv else " "
+        click.secho(
+            f"\n{prefix} {i}. {conv['name']} -- {conv['id']}", 
+            fg="green", bold=True
+        )
+        click.secho(f"    Model: {conv['model']}", fg="blue")
+        click.secho(
+            f"    Responses: {conv['response_count']} | "
+            f"Last active: {conv['last_active'] or 'Never'}", 
+            fg="yellow"
+        )
+    
+    return conversations
+
+
 def format_conversation(db):
     """Format the current conversation for display
     
