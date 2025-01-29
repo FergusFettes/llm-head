@@ -196,46 +196,11 @@ def register_commands(cli):
             else:
                 click.echo(line)
 
-    @head.command(name="list")
+    @head.command(name="list") 
     @click.option('--sort', type=click.Choice(['time', 'length']), default='time',
                  help='Sort by last active time (default) or conversation length')
     def head_list(sort):
         "List all conversations and their response counts"
         db = sqlite_utils.Database(logs_db_path())
         migrate(db)
-
-        # Get conversation stats with dynamic sorting
-        order_by = "last_active ASC" if sort == 'time' else "response_count ASC"
-        conversations = db.query(f"""
-            SELECT 
-                c.id,
-                c.name,
-                c.model,
-                COUNT(r.id) as response_count,
-                MAX(r.datetime_utc) as last_active
-            FROM conversations c
-            LEFT JOIN responses r ON c.id = r.conversation_id
-            GROUP BY c.id
-            ORDER BY {order_by}
-        """)
-
-        # Get current head conversation
-        try:
-            head_id = db["state"].get("head")["value"]
-            head_conv = db["responses"].get(head_id)["conversation_id"]
-        except (sqlite_utils.db.NotFoundError, TypeError):
-            head_conv = None
-
-        # Print conversations
-        for conv in conversations:
-            prefix = "→" if conv["id"] == head_conv else " "
-            click.secho(
-                f"\n{prefix} {conv['name']} -- {conv['id']}",
-                fg="green", bold=True
-            )
-            click.secho(f"    Model: {conv['model']}", fg="blue")
-            click.secho(
-                f"    Responses: {conv['response_count']} | "
-                f"Last active: {conv['last_active'] or 'Never'}",
-                fg="yellow"
-            )
+        print_conversation_list(db, sort)
