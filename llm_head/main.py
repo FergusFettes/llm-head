@@ -1,6 +1,6 @@
 from .migrations import populate_parent_ids, migrate
 from .dag import (
-    format_conversation, patched_from_row, patched_log_to_db,
+    patched_from_row, patched_log_to_db,
     new_load_conversation, print_conversation_list, print_formatted_conversation,
     resolve_conversation_identifier
 )
@@ -140,26 +140,22 @@ def register_commands(cli):
 
         try:
             if identifier:
-                conversation_id, latest_id, error = resolve_conversation_identifier(db, identifier)
-                if error:
-                    raise click.ClickException(error)
+                try:
+                    latest_id, error = resolve_conversation_identifier(db, identifier)
+                except ValueError:
+                    raise click.ClickException(f"Invalid conversation identifier: {latest_id}")
                 
                 # Temporarily set head to this conversation's latest response
                 db["state"].upsert({"key": "head", "value": latest_id}, pk="key")
             
             # Format using current head
-            formatted, error = format_conversation(db)
-            if error:
-                raise click.ClickException(error)
+            print_formatted_conversation(db)
 
         finally:
             # Restore original head if we had one
             if original_head:
                 db["state"].upsert({"key": "head", "value": original_head}, pk="key")
-        if error:
-            raise click.ClickException(error)
 
-        print_formatted_conversation(formatted, error)
 
     @head.command(name="list") 
     @click.option('--sort', type=click.Choice(['time', 'length']), default='time',

@@ -1,9 +1,10 @@
 from unittest.mock import patch
 import pytest
 
+from llm.cli import load_plugins
+load_plugins()
 from llm.plugins import pm
-from llm_head.llm_head import new_load_conversation
-from llm_head.vis import format_conversation
+from llm_head.dag import format_conversation, new_load_conversation
 from llm.migrations import migrate
 
 import sqlite_utils
@@ -31,8 +32,8 @@ def mock_db():
 
 
 def test_load_conversation_by_id(mock_db):
-    with patch('llm_head.logs_db_path', return_value=':memory:'), \
-         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+    with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.dag.sqlite_utils.Database', return_value=mock_db):
         
         conversation = new_load_conversation("test-conv-1")
         assert conversation is not None
@@ -43,8 +44,8 @@ def test_load_conversation_by_id(mock_db):
 
 
 def test_load_nonexistent_conversation(mock_db):
-    with patch('llm_head.logs_db_path', return_value=':memory:'), \
-         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+    with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.dag.sqlite_utils.Database', return_value=mock_db):
         
         with pytest.raises(click.ClickException) as exc:
             new_load_conversation("nonexistent-id")
@@ -52,8 +53,8 @@ def test_load_nonexistent_conversation(mock_db):
 
 
 def test_load_empty_conversation(mock_db):
-    with patch('llm_head.logs_db_path', return_value=':memory:'), \
-         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+    with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.dag.sqlite_utils.Database', return_value=mock_db):
         
         # Empty conversation has no responses
         conversation = new_load_conversation("test-conv-1")
@@ -61,8 +62,8 @@ def test_load_empty_conversation(mock_db):
 
 
 def test_load_most_recent_conversation(mock_db):
-    with patch('llm_head.logs_db_path', return_value=':memory:'), \
-         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+    with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.dag.sqlite_utils.Database', return_value=mock_db):
         
         # Add another conversation and some responses
         mock_db["conversations"].insert({
@@ -97,8 +98,8 @@ def test_load_most_recent_conversation(mock_db):
 
 
 def test_populate_parent_ids(mock_db):
-    with patch('llm_head.logs_db_path', return_value=':memory:'), \
-         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+    with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.dag.sqlite_utils.Database', return_value=mock_db):
         
         # Add responses without parent IDs
         mock_db["responses"].insert({
@@ -129,8 +130,8 @@ def test_populate_parent_ids(mock_db):
 
 
 def test_response_chain_building(mock_db):
-    with patch('llm_head.logs_db_path', return_value=':memory:'), \
-         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+    with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.dag.sqlite_utils.Database', return_value=mock_db):
         
         # Add responses with parent relationships
         mock_db["responses"].insert({
@@ -171,8 +172,8 @@ def test_response_chain_building(mock_db):
 
 
 def test_format_conversation(mock_db):
-    with patch('llm_head.logs_db_path', return_value=':memory:'), \
-         patch('llm_head.sqlite_utils.Database', return_value=mock_db):
+    with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
+         patch('llm_head.dag.sqlite_utils.Database', return_value=mock_db):
         # Add test response
         mock_db["responses"].insert({
             "id": "r1",
@@ -183,11 +184,10 @@ def test_format_conversation(mock_db):
             "options_json": "{}",
         })
         
-        mock_db["state"].insert({"key": "head", "value": "r1"})
         
         # Test with head ID
-        formatted, error = format_conversation(mock_db, "r1")
-        assert error is None
+        mock_db["state"].insert({"key": "head", "value": "r1"})
+        formatted = format_conversation(mock_db)
         assert "Test Conversation" in formatted
         assert "test prompt" in formatted
         assert "test response" in formatted
@@ -195,11 +195,17 @@ def test_format_conversation(mock_db):
         assert "→ Exchange 1:" in formatted
 
         # Test with missing head
-        formatted, error = format_conversation(mock_db, "nonexistent")
+        mock_db["state"].upsert({"key": "head", "value": "nonexistent"})
+        with pytest.raises(click.ClickException, match="No head response found"):
+            format_conversation(mock_db)
         assert formatted is None
-        assert "not found" in error
 
-        # Test with no head specified (uses state)
-        formatted, error = format_conversation(mock_db)
-        assert error is None
+        
+        # Test with head ID
+        mock_db["state"].insert({"key": "head", "value": "r1"})
+        formatted = format_conversation(mock_db)
         assert "Test Conversation" in formatted
+        assert "test prompt" in formatted
+        assert "test response" in formatted
+        assert "[ID: r1]" in formatted
+        assert "→ Exchange 1:" in formatted

@@ -24,53 +24,50 @@ def resolve_conversation_identifier(db, identifier):
         tuple of (conversation_id, latest_response_id, error_message)
         conversation_id and latest_response_id will be None if there was an error
     """
-    try:
-        if identifier.isdigit():
-            # Get conversations in current sort order
-            conversations = list(db.query("""
-                SELECT id FROM conversations c
-                LEFT JOIN responses r ON c.id = r.conversation_id
-                GROUP BY c.id
-                ORDER BY MAX(r.datetime_utc) DESC
-            """))
-            
-            idx = int(identifier) - 1
-            if idx < 0 or idx >= len(conversations):
-                return None, None, f"Invalid conversation number: {identifier}"
-            
-            conversation_id = conversations[idx]["id"]
-        else:
-            conversation_id = identifier
-
-        # Get latest response for requested conversation
-        latest = next(db.query("""
-            SELECT id FROM responses 
-            WHERE conversation_id = ? 
-            ORDER BY datetime_utc DESC 
-            LIMIT 1
-        """, [conversation_id]), None)
+    if identifier.isdigit():
+        # Get conversations in current sort order
+        conversations = list(db.query("""
+            SELECT c.id FROM conversations c
+            LEFT JOIN responses r ON c.id = r.conversation_id
+            GROUP BY c.id
+            ORDER BY MAX(r.datetime_utc) DESC
+        """))
         
-        if not latest:
-            return None, None, f"No responses found in conversation {conversation_id}"
-            
-        return conversation_id, latest["id"], None
+        idx = int(identifier) - 1
+        if idx < 0 or idx >= len(conversations):
+            return None, None, f"Invalid conversation number: {identifier}"
         
-    except ValueError:
-        return None, None, f"Invalid conversation identifier: {identifier}"
+        conversation_id = conversations[idx]["id"]
+    else:
+        conversation_id = identifier
+
+    # Get latest response for requested conversation
+    latest = next(db.query("""
+        SELECT id FROM responses 
+        WHERE conversation_id = ? 
+        ORDER BY datetime_utc DESC 
+        LIMIT 1
+    """, [conversation_id]), None)
+    
+    if not latest:
+        return None, f"No responses found in conversation {conversation_id}"
+        
+    return latest["id"], None
 
 
-def print_formatted_conversation(formatted_text, error=None):
+def print_formatted_conversation(db):
     """Print a formatted conversation with colors
     
     Args:
         formatted_text: The formatted conversation text
         error: Optional error message
     """
+    formatted, error = format_conversation(db)
     if error:
         raise click.ClickException(error)
 
     # Print with colors
-    for line in formatted_text.split("\n"):
+    for line in formatted.split("\n"):
         if line.startswith("Conversation:") or line.startswith("Model:"):
             click.secho(line, fg="green", bold=True)
         elif line.startswith(("→ Exchange", "Exchange")):
