@@ -2,7 +2,9 @@ import llm
 import llm.cli as lcli
 from llm.cli import logs_db_path
 from llm.models import Response, Conversation
-from llm.migrations import migration, migrate
+from llm.migrations import migrate
+from .migrations import m012_track_current_conversation, populate_parent_ids
+from .vis import format_conversation
 import sqlite_utils
 from typing import Optional, cast
 import click
@@ -13,17 +15,6 @@ from click_default_group import DefaultGroup
 original_log_to_db = Response.log_to_db
 original_from_row = Response.from_row
 
-
-@migration
-def m012_track_current_conversation(db):
-    db["state"].create(
-        {
-            "key": str,
-            "value": str,
-        },
-        pk="key"
-    )
-    db["responses"].add_column("parent_id", str)
 
 
 def get_most_recent_active_conversation(db):
@@ -65,38 +56,6 @@ def get_parent_id(response, db):
         return parent['id']
     return None
 
-
-def populate_parent_ids(db):
-    """Populate parent_ids for all responses in the database"""
-    # Get all conversations
-    conversations = db["conversations"].rows
-    
-    for conv in conversations:
-        conv_id = conv["id"]
-        # Get all responses for this conversation ordered by time
-        responses = list(db["responses"].rows_where(
-            "conversation_id = ? ORDER BY datetime_utc ASC",
-            [conv_id]
-        ))
-        
-        click.echo(f"Processing conversation {conv_id} with {len(responses)} responses")
-        
-        # Skip if no responses
-        if not responses:
-            continue
-            
-        # For each response except the first
-        for i in range(1, len(responses)):
-            current = responses[i]
-            parent = responses[i-1]
-            
-            # Update parent_id if not already set
-            if not current.get("parent_id"):
-                db["responses"].update(
-                    current["id"],
-                    {"parent_id": parent["id"]},
-                    alter=True
-                )
 
 
 def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversation]:
@@ -161,48 +120,6 @@ def patched_from_row(cls, db, row):
     response.parent_id = row.get("parent_id", None)
     return response
 
-
-def format_conversation(db):
-    """Format the current conversation for display
-    
-    Args:
-        db: sqlite_utils.Database instance
-        
-    Returns:
-        tuple of (formatted_text, error_message)
-        formatted_text will be None if there was an error
-        error_message will be None if formatting succeeded
-    """
-    try:
-        head_id = db["state"].get("head")["value"]
-    except sqlite_utils.db.NotFoundError:
-        return None, "No current head set"
-
-    try:
-        current = db["responses"].get(head_id)
-    except sqlite_utils.db.NotFoundError:
-        return None, f"Current head response {head_id} not found"
-
-    conversation = new_load_conversation(current["conversation_id"])
-    if not conversation:
-        return None, "Could not load conversation"
-
-    lines = []
-    lines.append(f"\nConversation: {conversation.name} ({conversation.id})")
-    lines.append(f"Model: {conversation.model}\n")
-
-    for i, response in enumerate(conversation.responses, 1):
-        is_head = response.id == head_id
-        prefix = "→ " if is_head else ""
-        
-        lines.append(f"{prefix}Exchange {i} -- {response.id}")
-        lines.append("Prompt:")
-        lines.append(response.prompt.prompt)
-        lines.append("\nResponse:")
-        lines.append(response.text())
-        lines.append("\n")
-
-    return "\n".join(lines), None
 
 
 # Apply patches
