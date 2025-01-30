@@ -13,7 +13,7 @@ import click
 
 def test_plugin_is_installed():
     names = [mod.__name__ for mod in pm.get_plugins()]
-    assert "llm_head" in names
+    assert "llm_head.main" in names
 
 
 @pytest.fixture
@@ -80,6 +80,7 @@ def test_load_most_recent_conversation(mock_db):
             "prompt": "old",
             "response": "response",
             "options_json": "{}",
+            "model": "gpt-4"
         })
         
         mock_db["responses"].insert({
@@ -89,6 +90,7 @@ def test_load_most_recent_conversation(mock_db):
             "prompt": "new",
             "response": "response",
             "options_json": "{}",
+            "model": "gpt-4"
         })
 
         # Should load test-conv-2 as it's more recent
@@ -121,7 +123,7 @@ def test_populate_parent_ids(mock_db):
         })
         
         # Run the populate function
-        from llm_head import populate_parent_ids
+        from llm_head.migrations import populate_parent_ids
         populate_parent_ids(mock_db)
         
         # Check that parent IDs were set correctly
@@ -141,6 +143,7 @@ def test_response_chain_building(mock_db):
             "prompt": "first",
             "response": "response 1",
             "options_json": "{}",
+            "model": "gpt-4",
         })
         
         mock_db["responses"].insert({
@@ -151,6 +154,7 @@ def test_response_chain_building(mock_db):
             "response": "response 2",
             "parent_id": "r1",
             "options_json": "{}",
+            "model": "gpt-4",
         })
         
         mock_db["responses"].insert({
@@ -161,6 +165,7 @@ def test_response_chain_building(mock_db):
             "response": "response 3",
             "parent_id": "r2",
             "options_json": "{}",
+            "model": "gpt-4",
         })
 
         # Set head to most recent response
@@ -170,42 +175,58 @@ def test_response_chain_building(mock_db):
         assert len(conversation.responses) == 3
         assert [r.prompt.prompt for r in conversation.responses] == ["first", "second", "third"]
 
+        # Set head to previous response
+        mock_db["state"].upsert({"key": "head", "value": "r2"}, pk="key")
+
+        conversation = new_load_conversation("test-conv-1")
+        assert len(conversation.responses) == 2
+        assert [r.prompt.prompt for r in conversation.responses] == ["first", "second"]
 
 def test_format_conversation(mock_db):
     with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
          patch('llm_head.dag.sqlite_utils.Database', return_value=mock_db):
-        # Add test response
+
+        # Add test response to old conv
         mock_db["responses"].insert({
             "id": "r1",
             "conversation_id": "test-conv-1",
+            "datetime_utc": "2023-01-01T10:00:00Z",
+            "prompt": "test prompt",
+            "response": "test response",
+            "options_json": "{}",
+            "model": "gpt-4",
+        })
+        
+        formatted, _ = format_conversation(mock_db)
+
+        # Add test conversation
+        mock_db["conversations"].insert({
+            "id": "test-conv-2",
+            "name": "Test Conversation 2",
+            "model": "gpt-3.5-turbo"
+        }, pk="id")
+        
+        # Add test response to new conv
+        mock_db["responses"].insert({
+            "id": "r2",
+            "conversation_id": "test-conv-2",
             "datetime_utc": "2024-01-01T10:00:00Z",
             "prompt": "test prompt",
             "response": "test response",
             "options_json": "{}",
+            "model": "gpt-4",
         })
         
-        
         # Test with head ID
         mock_db["state"].insert({"key": "head", "value": "r1"})
-        formatted = format_conversation(mock_db)
+        formatted, _ = format_conversation(mock_db)
         assert "Test Conversation" in formatted
         assert "test prompt" in formatted
         assert "test response" in formatted
-        assert "[ID: r1]" in formatted
-        assert "→ Exchange 1:" in formatted
+        assert "-- r1" in formatted
+        assert "→ Exchange 1" in formatted
 
         # Test with missing head
-        mock_db["state"].upsert({"key": "head", "value": "nonexistent"})
-        with pytest.raises(click.ClickException, match="No head response found"):
-            format_conversation(mock_db)
-        assert formatted is None
-
-        
-        # Test with head ID
-        mock_db["state"].insert({"key": "head", "value": "r1"})
-        formatted = format_conversation(mock_db)
-        assert "Test Conversation" in formatted
-        assert "test prompt" in formatted
-        assert "test response" in formatted
-        assert "[ID: r1]" in formatted
-        assert "→ Exchange 1:" in formatted
+        mock_db["state"].upsert({"key": "head", "value": "nonexistent"}, pk="key")
+        formatted, error = format_conversation(mock_db)
+        assert error == "Current head response nonexistent not found"
