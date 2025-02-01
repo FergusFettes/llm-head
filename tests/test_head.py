@@ -170,17 +170,58 @@ def test_response_chain_building(mock_db):
 
         # Set head to most recent response
         mock_db["state"].insert({"key": "head", "value": "r3"})
-
         conversation = new_load_conversation("test-conv-1")
         assert len(conversation.responses) == 3
         assert [r.prompt.prompt for r in conversation.responses] == ["first", "second", "third"]
 
         # Set head to previous response
         mock_db["state"].upsert({"key": "head", "value": "r2"}, pk="key")
-
         conversation = new_load_conversation("test-conv-1")
         assert len(conversation.responses) == 2
         assert [r.prompt.prompt for r in conversation.responses] == ["first", "second"]
+
+        # Set head to previous response
+        mock_db["state"].upsert({"key": "head", "value": "r1"}, pk="key")
+        conversation = new_load_conversation("test-conv-1")
+        assert len(conversation.responses) == 1
+        assert [r.prompt.prompt for r in conversation.responses] == ["first"]
+
+        # Start a new branch 
+        mock_db["responses"].insert({
+            "id": "r4",
+            "conversation_id": "test-conv-1", 
+            "datetime_utc": "2024-01-01T10:02:00Z",
+            "prompt": "fourth",
+            "response": "response 4",
+            "parent_id": "r2",
+            "options_json": "{}",
+            "model": "gpt-4",
+        })
+
+        mock_db["responses"].insert({
+            "id": "r5",
+            "conversation_id": "test-conv-1", 
+            "datetime_utc": "2024-01-01T10:02:00Z",
+            "prompt": "fifth",
+            "response": "response 5",
+            "parent_id": "r4",
+            "options_json": "{}",
+            "model": "gpt-4",
+        })
+
+        # Set head to end of first branch
+        mock_db["state"].upsert({"key": "head", "value": "r3"}, pk="key")
+        conversation = new_load_conversation("test-conv-1")
+        assert len(conversation.responses) == 3
+        assert [r.prompt.prompt for r in conversation.responses] == ["first", "second", "third"]
+
+        # Set head to end of second branch
+        mock_db["state"].upsert({"key": "head", "value": "r5"}, pk="key")
+        conversation = new_load_conversation("test-conv-1")
+        assert len(conversation.responses) == 4
+        assert [r.prompt.prompt for r in conversation.responses] == ["first", "second", "fourth", "fifth"]
+
+
 
 def test_format_conversation(mock_db):
     with patch('llm_head.dag.logs_db_path', return_value=':memory:'), \
@@ -197,7 +238,8 @@ def test_format_conversation(mock_db):
             "model": "gpt-4",
         })
         
-        formatted, _ = format_conversation(mock_db)
+        _, error = format_conversation(mock_db)
+        assert error == 'No current head set'
 
         # Add test conversation
         mock_db["conversations"].insert({
@@ -212,7 +254,7 @@ def test_format_conversation(mock_db):
             "conversation_id": "test-conv-2",
             "datetime_utc": "2024-01-01T10:00:00Z",
             "prompt": "test prompt",
-            "response": "test response",
+            "response": "test response 2:1",
             "options_json": "{}",
             "model": "gpt-4",
         })
@@ -230,3 +272,26 @@ def test_format_conversation(mock_db):
         mock_db["state"].upsert({"key": "head", "value": "nonexistent"}, pk="key")
         formatted, error = format_conversation(mock_db)
         assert error == "Current head response nonexistent not found"
+
+        # Add test response to new conv
+        mock_db["responses"].insert({
+            "id": "r3",
+            "conversation_id": "test-conv-2",
+            "datetime_utc": "2024-01-02T10:00:00Z",
+            "prompt": "test prompt",
+            "parent_id": "r2",
+            "response": "test response 2:2",
+            "options_json": "{}",
+            "model": "gpt-4",
+        })
+        
+        # Test with head ID
+        mock_db["state"].upsert({"key": "head", "value": "r3"}, pk="key")
+        formatted, _ = format_conversation(mock_db)
+        assert "Test Conversation" in formatted
+        assert "test prompt" in formatted
+        assert "test response" in formatted
+        assert "-- r2" in formatted
+        assert "-- r3" in formatted
+        assert "Exchange 1" in formatted
+        assert "→ Exchange 2" in formatted

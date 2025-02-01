@@ -186,24 +186,25 @@ def get_head(db):
         return None
 
 
-def get_response_parent(response, db):
+def get_parent_id(response, db):
     if response.parent_id:
-        return next(db.query("SELECT * FROM responses WHERE id = ?", [response.parent_id]), None)
+        return next(db.query("SELECT * FROM responses WHERE id = ?", [response.parent_id]), None)['id']
 
-    if not response.conversation:
-        return {'id': None}
+    conversation_id = next(db.query("""
+        SELECT conversation_id FROM responses WHERE id = ?
+    """, [response.id]), {}).get("conversation_id", None)
 
-    return next(db.query("""
+    if conversation_id is None:
+        return None
+
+    parent = next(db.query("""
         SELECT * FROM responses
         WHERE conversation_id = ?
         AND datetime_utc < ?
         ORDER BY datetime_utc DESC
         LIMIT 1
-    """, [response.conversation.id, response.datetime_utc()]), None)
+    """, [conversation_id, response.datetime_utc()]), None)
 
-
-def get_parent_id(response, db):
-    parent = get_response_parent(response, db)
     if parent:
         return parent['id']
     return None
@@ -264,9 +265,12 @@ def patched_log_to_db(self, db):
     # Add head tracking
     db['state'].upsert({'key': 'head', 'value': response.id}, pk='key')
 
+    print(f"Logged response {response.id} with parent {parent_id}")
+
 
 def patched_from_row(cls, db, row):
     # Call original implementation from global
     response = original_from_row(db, row)
     response.parent_id = row.get("parent_id", None)
+    response.datetime_utc = lambda: row['datetime_utc']
     return response
