@@ -238,6 +238,7 @@ def new_load_conversation(conversation_id: Optional[str]) -> Optional[Conversati
     # Start from head or most recent
     head = get_head(db) or max(responses.values(), key=lambda r: r["datetime_utc"])["id"]
 
+    # import pdb; pdb.set_trace()
     # Build the response chain by following parents
     response_chain = []
     while head and head in responses:
@@ -264,8 +265,6 @@ def patched_log_to_db(self, db):
 
     # Add head tracking
     db['state'].upsert({'key': 'head', 'value': response.id}, pk='key')
-
-    print(f"Logged response {response.id} with parent {parent_id}")
 
 
 def patched_from_row(cls, db, row):
