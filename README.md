@@ -4,6 +4,8 @@
 
 Track and navigate LLM conversation history with branchable conversations.
 
+NB: This monkey patches a lot of the llm internals and adds stuff to the db, probably not wise to use it unless you have backups.
+
 ## Installation
 
 Install this plugin in the same environment as [LLM](https://llm.datasette.io/).
